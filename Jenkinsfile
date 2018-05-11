@@ -12,17 +12,21 @@ pipeline {
     stage('build') {
       steps {
         withPythonEnv(pythonInstallation: 'Windows-CPython-36') {
-          pybat(script: 'pip install .', returnStdout: true)
-          pybat 'jenkins.bat'
-          git 'https://github.com/common-workflow-language/common-workflow-language.git'
+          pybat '.jenkins/test.bat'
         }
-
+      }
+    stage('CWL-conformance-test') {
+      steps {
+        git 'https://github.com/common-workflow-language/common-workflow-language.git'
+        withPythonEnv(pythonInstallation: 'Windows-CPython-36') {
+          pybat '.jenkins/conformance-test.bat'
+        }
       }
     }
   }
   post {
     always {
-      junit 'tests.xml'
+      junit 'tests.xml,**/conformance.xml'
 
     }
 
