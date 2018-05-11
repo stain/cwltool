@@ -15,6 +15,7 @@ pipeline {
           pybat '.jenkins/test.bat'
         }
       }
+    }
     stage('CWL-conformance-test') {
       steps {
         git 'https://github.com/common-workflow-language/common-workflow-language.git'
