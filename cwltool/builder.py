@@ -20,7 +20,7 @@ from .loghandler import _logger
 from .mutation import MutationManager  # pylint: disable=unused-import
 from .pathmapper import (PathMapper,  # pylint: disable=unused-import
                          get_listing, normalizeFilesDirs, visit_class)
-from .stdfsaccess import StdFsAccess  # pylint: disable=unused-import
+from .stdfsaccess import StdFsAccess
 from .utils import (aslist, docker_windows_path_adjust,
                     json_dumps, onWindows)
 if TYPE_CHECKING:

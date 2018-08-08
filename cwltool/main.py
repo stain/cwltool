@@ -49,6 +49,7 @@ from .secrets import SecretStore
 from .software_requirements import (DependenciesConfiguration,
                                     get_container_from_software_requirements)
 from .stdfsaccess import StdFsAccess
+from .ftp import FtpFsAccess
 from .update import ALLUPDATES, UPDATES
 from .utils import (DEFAULT_TMP_PREFIX, json_dumps, onWindows,
                     versionstring, windows_default_container_id,
@@ -266,7 +267,7 @@ def init_job_order(job_order_object,        # type: Optional[MutableMapping[Text
                    stdout,                  # type: Union[TextIO, StreamWriter]
                    print_input_deps=False,  # type: bool
                    relative_deps=False,     # type: bool
-                   make_fs_access=StdFsAccess,  # type: Callable[[Text], StdFsAccess]
+                   make_fs_access=FtpFsAccess,  # type: Callable[[Text], StdFsAccess]
                    input_basedir="",        # type: Text
                    secret_store=None        # type: SecretStore
                   ):  # type: (...) -> MutableMapping[Text, Any]
@@ -366,7 +367,6 @@ def init_job_order(job_order_object,        # type: Optional[MutableMapping[Text
     if "id" in job_order_object:
         del job_order_object["id"]
     return job_order_object
-
 
 
 def make_relative(base, obj):
@@ -655,7 +655,7 @@ def main(argsl=None,                   # type: List[str]
         for dirprefix in ("tmpdir_prefix", "tmp_outdir_prefix", "cachedir"):
             if getattr(runtimeContext, dirprefix) and getattr(runtimeContext, dirprefix) != DEFAULT_TMP_PREFIX:
                 sl = "/" if getattr(runtimeContext, dirprefix).endswith("/") or dirprefix == "cachedir" \
-                        else ""
+                    else ""
                 setattr(runtimeContext, dirprefix,
                         os.path.abspath(getattr(runtimeContext, dirprefix)) + sl)
                 if not os.path.exists(os.path.dirname(getattr(runtimeContext, dirprefix))):
@@ -670,8 +670,9 @@ def main(argsl=None,                   # type: List[str]
                 runtimeContext.move_outputs = "copy"
             runtimeContext.tmp_outdir_prefix = args.cachedir
 
-        runtimeContext.secret_store = getdefault(runtimeContext.secret_store, SecretStore())
-        runtimeContext.make_fs_access = getdefault(runtimeContext.make_fs_access, StdFsAccess)
+        runtimeContext.secret_store = getdefault(
+            runtimeContext.secret_store, SecretStore())
+        runtimeContext.make_fs_access = FtpFsAccess
         try:
             initialized_job_order_object = init_job_order(
                 job_order_object, args, tool, jobloader, stdout,

@@ -3,6 +3,7 @@ from __future__ import absolute_import
 import collections
 import logging
 import os
+import shutil
 import stat
 import uuid
 from functools import partial  # pylint: disable=unused-import
@@ -159,6 +160,13 @@ def downloadHttpFile(httpurl):
     r.close()
     return f.name
 
+def downloadFtpFile(ftpurl):  # type: (Text) -> Text
+    with urllib.request.urlopen(ftpurl) as response:
+        with NamedTemporaryFile(mode='wb', delete=False) as destination:
+            shutil.copyfileobj(response, destination)
+    destination.close()
+    return destination.name
+
 def ensure_writable(path):
     # type: (Text) -> None
     if os.path.isdir(path):
@@ -249,6 +257,8 @@ class PathMapper(object):
                     deref = ab
                     if urllib.parse.urlsplit(deref).scheme in ['http', 'https']:
                         deref = downloadHttpFile(path)
+                    elif urllib.parse.urlsplit(deref).scheme == 'ftp':
+                        deref = downloadFtpFile(path)
                     else:
                         # Dereference symbolic links
                         st = os.lstat(deref)

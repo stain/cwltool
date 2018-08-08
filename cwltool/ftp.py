@@ -1,54 +1,83 @@
+"""FTP support"""
 from __future__ import absolute_import
 
 import fnmatch
-from ftplib import FTP
+import ftplib
+import logging
+import netrc
 import glob
 import os
-import sys
-from io import open
-from urllib import urlopen
-from typing import (IO, BinaryIO, List,  # pylint: disable=unused-import
-                    Text, Union, overload)
+from typing import List, Text  # noqa F401 # pylint: disable=unused-import
 
-import six
 from six.moves import urllib
-from schema_salad.ref_resolver import file_uri, uri_file_path
+from schema_salad.ref_resolver import uri_file_path
 
-from .utils import onWindows
-from .stdfsaccess import StdFsAccess
+from cwltool.stdfsaccess import StdFsAccess
+from cwltool.loghandler import _logger
 
-if sys.version_info < (3, 4):
-    from pathlib2 import PosixPath
-else:
-    from pathlib import PosixPath
 
 def abspath(src, basedir):  # type: (Text, Text) -> Text
+    """http(s):, file:, ftp:, and plain path aware absolute path"""
     if src.startswith(u"file://"):
-        ab = six.text_type(uri_file_path(str(src)))
-    elif urllib.parse.urlsplit(src).scheme in ['http','https', 'ftp']:
+        apath = Text(uri_file_path(str(src)))
+    elif urllib.parse.urlsplit(src).scheme in ['http', 'https', 'ftp']:
         return src
     else:
         if basedir.startswith(u"file://"):
-            ab = src if os.path.isabs(src) else basedir+ '/'+ src
+            apath = src if os.path.isabs(src) else basedir + '/' + src
         else:
-            ab = src if os.path.isabs(src) else os.path.join(basedir, src)
-    return ab
+            apath = src if os.path.isabs(src) else os.path.join(basedir, src)
+    return apath
+
 
 class FtpFsAccess(StdFsAccess):
-    def __init__(self, host, user, passwd, port=21):  # type: (Text) -> None
-        self.host = host
-        self.user = user
-        self.passwd = passwd
-        self.port = port
-        self.ftp = None
+    """Basic FTP access."""
+    def __init__(self, basedir):  # type: (Text) -> None
+        super(FtpFsAccess, self).__init__(basedir)
+        self.cache = {}
+        self.netrc = None
+        try:
+            if 'HOME' in os.environ:
+                if os.path.exists(os.path.join(os.environ['HOME'], '.netrc')):
+                    self.netrc = netrc.netrc(
+                        os.path.join(os.environ['HOME'], '.netrc'))
+            elif os.path.exists(os.path.join(os.curdir, '.netrc')):
+                self.netrc = netrc.netrc(os.path.join(os.curdir, '.netrc'))
+        except netrc.NetrcParseError as err:
+            _logger.debug(err)
 
-    def _connect(self): # type: () -> None
-            self.ftp = FTP(self.host, self.user, self.passwd)
+    def _connect(self, url):  # type: (Text) -> Optional[ftplib.FTP]
+        parse = parse = urllib.parse.urlparse(url)
+        if parse.scheme == 'ftp':
+            host = parse.netloc
+            user = passwd = ""
+            if '@' in parse.netloc:
+                (user, host) = parse.netloc.split('@')
+            if ':' in user:
+                (user, passwd) = user.split(':')
+            if not user and self.netrc:
+                creds = self.netrc.authenticators(host)
+                if creds:
+                    user = creds.login
+                    passwd = creds.password
+            if (host, user, passwd) in self.cache:
+                if self.cache[(host, user, passwd)].pwd():
+                    logging.debug("FTP cache hit: %s@%s", user, host)
+                    return self.cache[(host, user, passwd)]
+            ftp = ftplib.FTP_TLS()
+            ftp.set_debuglevel(1 if _logger.isEnabledFor(logging.DEBUG) else 0)
+            ftp.connect(host)
+            ftp.login(user, passwd)
+            self.cache[(host, user, passwd)] = ftp
+            return ftp
+        return None
 
     def _abs(self, p):  # type: (Text) -> Text
         return abspath(p, self.basedir)
 
-    def glob(self, pattern):  # type: (Text) -> List[Text]  
+    def glob(self, pattern):  # type: (Text) -> List[Text]
+        if not self.basedir.startswith("ftp:"):
+            return super(FtpFsAccess, self).glob(pattern)
         return self._glob(pattern)
 
     def _glob0(self, basename, basepath):
@@ -63,15 +92,15 @@ class FtpFsAccess(StdFsAccess):
     def _glob1(self, pattern, basepath=None):
         try:
             names = self.listdir(basepath)
-        except Exception:
+        except ftplib.all_errors:
             return []
         if pattern[0] != '.':
             names = filter(lambda x: x[0] != '.', names)
         return fnmatch.filter(names, pattern)
 
-    def _glob(self, pattern, basepath=None):  # type: (Text) -> List[Text]  
-        if not self.ftp:
-            self._connect()
+    def _glob(self, pattern, basepath=None):  # type: (Text) -> List[Text]
+        if not basepath:
+            basepath = self.basedir
         dirname, basename = pattern.rsplit('/', 1)
         if not glob.has_magic(pattern):
             if basename:
@@ -95,44 +124,47 @@ class FtpFsAccess(StdFsAccess):
             results.extend(glob_in_dir(dirname, basename))
         return results
 
-
-    # overload is related to mypy type checking and in no way
-    # modifies the behaviour of the function.
-    @overload
-    def open(self, fn, mode='rb'):  # type: (Text, str) -> IO[bytes]
-        pass
-
-    @overload
-    def open(self, fn, mode='r'):  # type: (Text, str) -> IO[str]
-        pass
-
     def open(self, fn, mode):
+        if not self.basedir.startswith("ftp:"):
+            return super(FtpFsAccess, self).open(fn, mode)
         if 'r' in mode:
-            return urlopen("ftp://{}:{}@{}/{}".format(
-                self.user, self.passwd, self.host, fn))
+            return urllib.request.urlopen(fn)
+        raise Exception('Write mode FTP not implemented')
 
     def exists(self, fn):  # type: (Text) -> bool
-        return os.path.exists(self._abs(fn))
+        if not self.basedir.startswith("ftp:"):
+            return super(FtpFsAccess, self).exists(fn)
+        return self.isfile(fn) or self.isdir(fn)
 
     def isfile(self, fn):  # type: (Text) -> bool
-        return bool(self.ftp.size(fn))
+        ftp = self._connect(fn)
+        if ftp:
+            return bool(ftp.size(urllib.parse.urlparse(fn).path))
+        return super(FtpFsAccess, self).isfile(fn)
 
     def isdir(self, fn):  # type: (Text) -> bool
-       return bool(self.listdir(fn))
+        if fn.startswith('ftp:'):
+            try:
+                self.listdir(fn)
+                return True
+            except ftplib.all_errors:
+                return False
+        return super(FtpFsAccess, self).isdir(fn)
 
     def listdir(self, fn):  # type: (Text) -> List[Text]
-        return self.ftp.nlst(fn)
+        ftp = self._connect(fn)
+        if ftp:
+            return ftp.nlst(fn)
+        return super(FtpFsAccess, self).listdir(fn)
 
     def join(self, path, *paths):  # type: (Text, *Text) -> Text
-        return PosixPath.join(path, *paths)
+        if path.startswith('ftp:'):
+            if paths:
+                return path+'/'+'/'.join(paths)
+            return path
+        return super(FtpFsAccess, self).join(path, *paths)
 
     def realpath(self, path):  # type: (Text) -> Text
+        if path.startswith('ftp:'):
+            return path
         return os.path.realpath(path)
-
-    # On windows os.path.realpath appends unecessary Drive, here we would avoid that
-    def docker_compatible_realpath(self, path):  # type: (Text) -> Text
-        if onWindows():
-            if path.startswith('/'):
-                return path
-            return '/'+path
-        return self.realpath(path)

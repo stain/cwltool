@@ -31,7 +31,6 @@ from .mutation import MutationManager  # pylint: disable=unused-import
 from .process import Process, get_overrides, shortname, uniquename
 from .software_requirements import (  # pylint: disable=unused-import
     DependenciesConfiguration)
-from .stdfsaccess import StdFsAccess
 from .provenance import CreateProvProfile
 from .utils import DEFAULT_TMP_PREFIX, aslist, json_dumps
 from . import context
@@ -341,7 +340,7 @@ class WorkflowJob(object):
                 # type: (Dict[Text, Any]) -> Dict[Text, Any]
                 shortio = {shortname(k): v for k, v in six.iteritems(io)}
 
-                fs_access = getdefault(runtimeContext.make_fs_access, StdFsAccess)("")
+                fs_access = runtimeContext.make_fs_access("")
                 for k, v in io.items():
                     if k in loadContents and v.get("contents") is None:
                         with fs_access.open(v["location"], "rb") as f:
