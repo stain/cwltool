@@ -528,7 +528,7 @@ class CreateProvProfile():
         '''
         for key, value in job_order.items():
             prov_role = self.research_object.wf_ns["main/%s/%s" % (name, key)]
-            if isinstance(value, dict) and 'class' in value \
+            if isinstance(value, MutableMapping) and 'class' in value \
                     and value['class'] == 'File' and 'location' in value \
                     and "contents" not in value:
                 # FIXME: cope with file literals.
@@ -594,7 +594,7 @@ class CreateProvProfile():
             '''
             new_l = []
             for out_file in current_l:
-                if isinstance(out_file, dict):
+                if isinstance(out_file, MutableMapping):
                     new_l.append((key, out_file['checksum'], out_file['location']))
 
             return new_l
@@ -617,7 +617,7 @@ class CreateProvProfile():
 
                 if isinstance(value, list):
                     key_files.append(array_output(key, value))
-                elif isinstance(value, dict):
+                elif isinstance(value, MutableMapping):
                     key_files.append(dict_output(key, value))
 
         merged_total = list(itertools.chain.from_iterable(key_files))
@@ -656,7 +656,7 @@ class CreateProvProfile():
         '''
         create data artefact entities for all file objects.
         '''
-        if isinstance(relativised_input_obj, dict):
+        if isinstance(relativised_input_obj, MutableMapping):
             # Base case - we found a File we need to update
             if relativised_input_obj.get("class") == "File":
                 #create an artefact
@@ -1141,7 +1141,7 @@ class ResearchObject():
                         pass  # FIXME: avoids duplicate snapshotting; need better solution
             elif key in ("secondaryFiles", "listing"):
                 for files in value:
-                    if isinstance(files, dict):
+                    if isinstance(files, MutableMapping):
                         self.generate_snapshot(files)
             else:
                 pass
@@ -1285,7 +1285,7 @@ class ResearchObject():
         #2) for other attributes, the actual value.
         relativised_input_objecttemp = {}
         for key, value in job.items():
-            if isinstance(value, dict):
+            if isinstance(value, MutableMapping):
                 if value.get("class") == "File":
                     relativised_input_objecttemp[key] = value
             else:
@@ -1301,7 +1301,7 @@ class ResearchObject():
         '''
         # Base case - we found a File we need to update
         _logger.debug(u"[provenance] Relativising: %s", structure)
-        if isinstance(structure, dict):
+        if isinstance(structure, MutableMapping):
             if structure.get("class") == "File" and "contents" not in structure:
                 #standardised fs access object creation
                 assert self.make_fs_access
